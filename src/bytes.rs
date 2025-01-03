@@ -1,3 +1,4 @@
+use zeroize::Zeroize;
 use core::fmt;
 use core::ptr::NonNull;
 use core::ops::{ Deref, DerefMut };
@@ -142,6 +143,7 @@ impl fmt::Pointer for SecBytes {
 
 impl Drop for SecBytes {
     fn drop(&mut self) {
+        self.as_mut().zeroize();
         unsafe {
             #[cfg(feature = "use_os")]
             mprotect(self.ptr, Prot::ReadWrite);
@@ -169,6 +171,7 @@ impl<'a> Deref for SecReadGuard<'a> {
 impl<'a> Drop for SecReadGuard<'a> {
     fn drop(&mut self) {
         #[cfg(feature = "use_os")]
+        self.as_mut().zeroize();
         unsafe {
             let count = self.0.count.get();
             self.0.count.set(count - 1);
@@ -205,9 +208,17 @@ impl<'a> DerefMut for SecWriteGuard<'a> {
 
 impl<'a> Drop for SecWriteGuard<'a> {
     fn drop(&mut self) {
+        self.as_mut().zeroize();
         #[cfg(feature = "use_os")]
         unsafe {
             mprotect(self.0.ptr, Prot::NoAccess);
         }
     }
 }
+impl Zeroize for SecBytes {
+    fn zeroize(&mut self) {
+        let mut guard = self.write(); // Obtain a writable guard
+        guard.zeroize(); // Use the `zeroize` trait to securely overwrite memory
+    }
+}
+impl zeroize::DefaultIsZeroes for SecBytes {}
